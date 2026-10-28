@@ -15,7 +15,6 @@ lap_start_time = time.time()  # Initialize lap start time
 
 # Initialize flag to track if the first movement has been processed
 first_movement_processed = False
-crossed_line = False  # Flag to track if cursor has crossed the green line
 
 def update_limits(x_data, y_data):
     margin = 10  # Add a small margin to make sure points are not on the edge
@@ -23,7 +22,7 @@ def update_limits(x_data, y_data):
     ax.set_ylim(min(y_data) - margin, max(y_data) + margin)
 
 def add_perpendicular_line(x_data, y_data):
-    global first_movement_processed, x_start, y_start, x_end, y_end  # Access global variables and line coordinates
+    global first_movement_processed, x_start, y_start, x_end, y_end, lap_start_time  # Access global variables and line coordinates
     if len(x_data) >= 2 and not first_movement_processed:
         # Calculate direction of movement
         dx = x_data[-1] - x_data[-2]
@@ -41,25 +40,30 @@ def add_perpendicular_line(x_data, y_data):
             # Add a new green line for the first movement direction
             ax.plot([x_start, x_end], [y_start, y_end], 'g-', linewidth=2)
             first_movement_processed = True  # Update flag to prevent further perpendicular lines
+            lap_start_time = time.time()  # First lap starts when the start line is placed
 
-def check_line_crossing(x, y, x_start, y_start, x_end, y_end):
-    global crossed_line, lap_start_time, lap_times
-    # Vector from start to end of line
-    line_vec = [x_end - x_start, y_end - y_start]
-    # Vector from start of line to cursor position
-    pos_vec = [x - x_start, y - y_start]
-    # Calculate the determinant (cross product in 2D) to determine which side of the line we're on
-    det = line_vec[0] * pos_vec[1] - line_vec[1] * pos_vec[0]
-    if crossed_line and det > 0:  # If previously crossed and now on the original side
-        crossed_line = False  # Reset the crossed flag
-    elif not crossed_line and det < 0:  # If crossing occurs
-        crossed_line = True
-        # Calculate lap time and reset lap timer
-        current_time = time.time()
-        lap_time = current_time - lap_start_time
-        lap_times.append(lap_time)
-        lap_start_time = current_time
-        print(f"Lap completed in {lap_time:.2f} seconds.")  # Print lap time
+def side_of(px, py, ax, ay, bx, by):
+    # Cross product: > 0 on one side of the line a->b, < 0 on the other, 0 on it
+    return (bx - ax) * (py - ay) - (by - ay) * (px - ax)
+
+def check_line_crossing(x_prev, y_prev, x, y, x_start, y_start, x_end, y_end):
+    global lap_start_time, lap_times
+    # Which side of the start line the last point and this point are on.
+    # Moving forward along the track goes from the positive side to the negative side.
+    before = side_of(x_prev, y_prev, x_start, y_start, x_end, y_end)
+    after = side_of(x, y, x_start, y_start, x_end, y_end)
+    if not (before > 0 and after <= 0):
+        return
+    # Only count it if the movement actually passes through the green segment,
+    # not somewhere else along the same infinite line
+    if side_of(x_start, y_start, x_prev, y_prev, x, y) * side_of(x_end, y_end, x_prev, y_prev, x, y) > 0:
+        return
+    # Calculate lap time and reset lap timer
+    current_time = time.time()
+    lap_time = current_time - lap_start_time
+    lap_times.append(lap_time)
+    lap_start_time = current_time
+    print(f"Lap completed in {lap_time:.2f} seconds.")  # Print lap time
 
 try:
     while True:
@@ -74,7 +78,7 @@ try:
         if x_data and y_data:  # Check if there are any points to avoid error on min/max calculation
             update_limits(x_data, y_data)
             if first_movement_processed:  # Only check for line crossing if the line exists
-                check_line_crossing(x, y, x_start, y_start, x_end, y_end)
+                check_line_crossing(x_data[-2], y_data[-2], x, y, x_start, y_start, x_end, y_end)
             add_perpendicular_line(x_data, y_data)  # Call this function to possibly add a perpendicular line
         
         plt.draw()
